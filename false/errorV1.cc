@@ -1,8 +1,12 @@
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <errno.h>
+
 #include <sys/_endian.h>
 #include <sys/_pthread/_pthread_t.h>
 #include <sys/errno.h>
@@ -13,28 +17,35 @@
 
 #ifdef LINUX
 #include <sys/epoll.h>
+#else
+#include <sys/select.h>
 #endif
 
 #include <pthread.h>
 
 #include <iostream>
 #include <string>
-#include <semaphore.h>
+#include <semaphore>
 #include <mutex>
 
 #define PORT 8080
 
 void initSocket(int &iSockFd_sockFd);
-void *sendMessage_handler(void *);
+void *connection_handler(void *);
+std::string printMessage(int socket);
 
 int main(int argc, char const* argv[])
 {
 	int iSockFd_serverFd;
     int iSockFd_clntFd;
+    int i_valRead;
 	struct sockaddr_in SockAddrIn_sockAddr;
 	int i_addrLen = sizeof(SockAddrIn_sockAddr);
+
     pthread_t pthread_id;
-    char c_clientIP[INET_ADDRSTRLEN];
+
+	const char* hello = "Connected server";
+	char c_buffer[1024] = { 0 };
 
     initSocket(iSockFd_serverFd);
 
@@ -48,7 +59,7 @@ int main(int argc, char const* argv[])
         else 
         {
             fprintf(stdout, "accept success: [%02d] %s\n", errno, strerror(errno));
-            if(pthread_create(&pthread_id, NULL, sendMessage_handler, (void *)&iSockFd_clntFd) < 0)
+            if(pthread_create(&pthread_id, NULL, connection_handler, (void *)&iSockFd_clntFd) < 0)
             {
                 fprintf(stderr, "pthread_create failed: [%02d] %s\n", errno, strerror(errno));
                 exit(EXIT_FAILURE);
@@ -57,16 +68,23 @@ int main(int argc, char const* argv[])
             {
                 fprintf(stderr, "pthread_create success: [%02d] %s\n", errno, strerror(errno));
                 std::cout << "pthread_id: " << pthread_id << '\n';
-                inet_ntop(AF_INET, &(SockAddrIn_sockAddr.sin_addr), c_clientIP, INET_ADDRSTRLEN);
-                printf("Connected client IP address: %s\n", c_clientIP);
             }
         }
     }
 
-	close(iSockFd_clntFd);
-	shutdown(iSockFd_serverFd, SHUT_RDWR);
+//	i_valRead = read(iSockFd_clntFd, c_buffer, 1024);
+//	printf("%s\n", c_buffer);
+//	send(iSockFd_clntFd, hello, strlen(hello), 0);
+//	printf("Hello message sent\n");
+//
+//	close(iSockFd_clntFd);
+//	shutdown(iSockFd_serverFd, SHUT_RDWR);
 	return 0;
 }
+
+
+
+
 
 void initSocket(int &iSockFd_sockFd)
 {
@@ -106,7 +124,7 @@ void initSocket(int &iSockFd_sockFd)
 
 }
 
-void *sendMessage_handler(void *socket)
+void *connection_handler(void *socket)
 {
     // void* -> int * && *socket로 포인터가 가르키는 주소의 값 확인;
     int iSockFd_sockFd = *(int *)socket;
@@ -122,4 +140,36 @@ void *sendMessage_handler(void *socket)
     }
 
     return NULL;
+}
+
+std::string printMessage(int socket)
+{
+    int iSockFd_sockFd = socket;
+    int l;
+    char r;
+    std::string s = "";
+
+read_again:
+    l=read(iSockFd_sockFd, &r, 1);
+    std::cerr << "[PrintMessage] read " << l << std::endl;
+    if(l<0)
+    {
+        if(errno == EAGAIN)
+        {
+            goto read_done;
+        }
+        std::cerr << "[PrintMessage] IO Error on fd for Socket" << std::endl;
+        return s;
+    }
+    if(l>0)
+    {
+        if (r != '~' && r !='\r' && r!= '\n')
+            s += r;
+        else 
+            s += '\0';
+        goto read_again;
+    }
+
+read_done:
+    return s;
 }
